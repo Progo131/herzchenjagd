@@ -406,28 +406,32 @@
       }
     }
 
-    function sprayTarget() {
+    function sprayTargets() {
       const now = Date.now();
-      if (bucketPowerUntil <= now) return null;
+      const targets = [];
+      if (bucketPowerUntil <= now) return targets;
       for (let distance = 1; distance <= 3; distance += 1) {
         const x = player.x + player.dir.x * distance;
         const y = player.y + player.dir.y * distance;
-        if (blocked(x, y)) return null;
-        const target = chasers.find((chaser) => chaser.x === x && chaser.y === y && chaser.frozenUntil <= now);
-        if (target) return target;
+        if (blocked(x, y)) return targets;
+        chasers
+          .filter((chaser) => chaser.x === x && chaser.y === y && chaser.frozenUntil <= now)
+          .forEach((chaser) => targets.push(chaser));
       }
-      return null;
+      return targets;
     }
 
     function sprayWater() {
       if (bucketPowerUntil <= Date.now() || gameOver || win) return;
       sprayFlashUntil = Date.now() + 220;
       sprayDir = { ...player.dir };
-      const target = sprayTarget();
-      if (target) {
-        target.frozenUntil = Date.now() + 10000;
+      const targets = sprayTargets();
+      if (targets.length > 0) {
+        targets.forEach((target) => {
+          target.frozenUntil = Date.now() + 10000;
+        });
         bucketPowerUntil = 0;
-        messageEl.textContent = "Treffer. Eine Alex-Figur ist 10 Sekunden blockiert.";
+        messageEl.textContent = `Treffer. ${targets.length} Alex-Figur${targets.length === 1 ? "" : "en"} sind 10 Sekunden blockiert.`;
       } else {
         messageEl.textContent = "Daneben. Du musst in einer geraden 3-Feld-Linie stehen.";
       }
@@ -693,7 +697,7 @@
       ctx.font = `800 ${Math.max(32, tile * 1.25)}px Arial`;
       ctx.fillText("Alex liebt Romina", canvas.width / 2, canvas.height / 2);
       ctx.font = `700 ${Math.max(16, tile * 0.52)}px Arial`;
-      ctx.fillText("R druecken fuer noch eine Runde", canvas.width / 2, canvas.height / 2 + tile * 1.25);
+      ctx.fillText("Tippen fuer das naechste Level", canvas.width / 2, canvas.height / 2 + tile * 1.25);
       ctx.restore();
     }
 
@@ -765,6 +769,10 @@
       if (gameOver || win) return;
       moveEntity(player, { x, y });
       checkCollisions();
+    }
+
+    function advanceAfterWin() {
+      if (win) restart();
     }
 
     function restart() {
@@ -904,6 +912,14 @@
         await document.exitFullscreen().catch(() => {});
       }
     });
+
+    canvas.addEventListener("click", advanceAfterWin);
+    canvas.addEventListener("touchstart", (event) => {
+      if (win) {
+        event.preventDefault();
+        advanceAfterWin();
+      }
+    }, { passive: false });
 
     ["touchstart", "touchmove", "touchend", "gesturestart", "gesturechange", "gestureend"].forEach((type) => {
       mobileControls.addEventListener(type, (event) => event.preventDefault(), { passive: false });
