@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Herzchenjagd</title>
   <style>
     :root {
@@ -33,6 +33,9 @@
         var(--bg);
       font-family: Arial, Helvetica, sans-serif;
       color: var(--text);
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      user-select: none;
     }
 
     main {
@@ -90,12 +93,44 @@
       touch-action: none;
     }
 
-    .controls {
+    .mobile-controls {
       display: grid;
-      grid-template-columns: repeat(3, 58px);
-      grid-template-rows: repeat(3, 48px);
+      grid-template-columns: 132px 72px;
       justify-content: center;
-      gap: 8px;
+      align-items: center;
+      gap: 18px;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .joystick {
+      position: relative;
+      width: 132px;
+      height: 132px;
+      border-radius: 50%;
+      background: rgba(52, 40, 58, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 0 0 14px rgba(255, 255, 255, 0.04);
+      touch-action: none;
+    }
+
+    .stick {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: #7d5cff;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+      pointer-events: none;
+    }
+
+    .mobile-actions {
+      display: grid;
+      gap: 10px;
     }
 
     button {
@@ -105,6 +140,12 @@
       color: var(--text);
       font-size: 22px;
       cursor: pointer;
+      min-width: 66px;
+      min-height: 54px;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
     button:active {
@@ -112,29 +153,13 @@
       background: #44334d;
     }
 
-    #up {
-      grid-column: 2;
-    }
-
-    #left {
-      grid-column: 1;
-      grid-row: 2;
-    }
-
-    #down {
-      grid-column: 2;
-      grid-row: 2;
-    }
-
-    #right {
-      grid-column: 3;
-      grid-row: 2;
-    }
-
     #spray {
-      grid-column: 2;
-      grid-row: 3;
       background: #285a75;
+    }
+
+    #fullscreen {
+      background: #4b394d;
+      font-size: 18px;
     }
 
     .message {
@@ -145,7 +170,7 @@
     }
 
     @media (min-width: 760px) {
-      .controls {
+      .mobile-controls {
         display: none;
       }
     }
@@ -158,6 +183,7 @@
       <div class="stats" aria-live="polite">
         <span>Herzen: <strong id="score">0</strong>/<strong id="total">0</strong></span>
         <span>Leben: <strong id="lives">3</strong></span>
+        <span>Level: <strong id="levelNo">1</strong></span>
       </div>
     </header>
 
@@ -165,12 +191,14 @@
       <canvas id="game" width="720" height="720" aria-label="Herzchenjagd Spielbrett"></canvas>
     </section>
 
-    <div class="controls" aria-label="Touch-Steuerung">
-      <button id="up" aria-label="Nach oben">↑</button>
-      <button id="left" aria-label="Nach links">←</button>
-      <button id="down" aria-label="Nach unten">↓</button>
-      <button id="right" aria-label="Nach rechts">→</button>
-      <button id="spray" aria-label="Wasser spritzen">💧</button>
+    <div class="mobile-controls" id="mobileControls" aria-label="Touch-Steuerung">
+      <div class="joystick" id="joystick" role="application" aria-label="Joystick">
+        <div class="stick" id="stick"></div>
+      </div>
+      <div class="mobile-actions">
+        <button id="spray" aria-label="Wasser spritzen">&#128167;</button>
+        <button id="fullscreen" aria-label="Vollbild">FULL</button>
+      </div>
     </div>
 
     <p class="message" id="message">Pfeiltasten oder WASD. Sammle alle Herzchen.</p>
@@ -182,6 +210,7 @@
     const scoreEl = document.querySelector("#score");
     const totalEl = document.querySelector("#total");
     const livesEl = document.querySelector("#lives");
+    const levelEl = document.querySelector("#levelNo");
     const messageEl = document.querySelector("#message");
 
     const level = [
@@ -209,14 +238,14 @@
     ];
 
     const wallNotes = [
-      { x: 3, y: 0, text: "LY BIBÄ" },
+      { x: 3, y: 0, text: "LY BIBAE" },
       { x: 12, y: 0, text: "DU BIST MEIN HERZ" },
       { x: 0, y: 6, text: "ICH LIEBE DICH" },
       { x: 12, y: 6, text: "NUR DU" },
       { x: 1, y: 12, text: "MEIN LIEBLING" },
       { x: 11, y: 12, text: "BOCK ZU FICKEN" },
       { x: 4, y: 20, text: "KUSS FUER DICH" },
-      { x: 13, y: 20, text: "LY BIBÄ" }
+      { x: 13, y: 20, text: "LY BIBAE" }
     ];
 
     const size = level.length;
@@ -226,15 +255,15 @@
     let totalHearts = 0;
     let score = 0;
     let lives = 3;
+    let gameLevel = 1;
     let gameOver = false;
     let win = false;
     let tick = 0;
     let player = { x: 1, y: 1, dir: { x: 1, y: 0 } };
-    let chaser = { x: 10, y: 9, dir: { x: 0, y: -1 } };
+    let chasers = [];
     let lastChaserMove = 0;
-    let bucket = { x: 3, y: 3, visibleUntil: 0, nextAt: 0 };
+    let buckets = [];
     let bucketPowerUntil = 0;
-    let chaserFrozenUntil = 0;
     let sprayFlashUntil = 0;
     let sprayDir = { x: 1, y: 0 };
     let winStartedAt = 0;
@@ -274,7 +303,13 @@
       }
     }
 
-    function chaserMove() {
+    function bucketLimit() {
+      if (gameLevel >= 4) return 3;
+      if (gameLevel >= 2) return 2;
+      return 1;
+    }
+
+    function chaserMove(chaser) {
       const options = [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
@@ -308,7 +343,20 @@
 
     function resetPositions() {
       player = { x: 1, y: 1, dir: { x: 1, y: 0 } };
-      chaser = { x: 10, y: 9, dir: { x: 0, y: -1 } };
+      const starts = [
+        { x: 10, y: 9 },
+        { x: 17, y: 1 },
+        { x: 1, y: 19 },
+        { x: 17, y: 19 },
+        { x: 10, y: 13 },
+        { x: 3, y: 7 },
+        { x: 15, y: 7 },
+        { x: 7, y: 17 }
+      ];
+      chasers = Array.from({ length: gameLevel }, (_, index) => {
+        const start = starts[index % starts.length];
+        return { x: start.x, y: start.y, dir: { x: 0, y: index % 2 === 0 ? -1 : 1 }, frozenUntil: 0 };
+      });
     }
 
     function randomOpenCell() {
@@ -316,50 +364,70 @@
       for (let y = 1; y < size - 1; y += 1) {
         for (let x = 1; x < size - 1; x += 1) {
           const awayFromPlayer = Math.abs(player.x - x) + Math.abs(player.y - y) > 4;
-          const awayFromChaser = Math.abs(chaser.x - x) + Math.abs(chaser.y - y) > 4;
-          if (!blocked(x, y) && awayFromPlayer && awayFromChaser) cells.push({ x, y });
+          const awayFromChasers = chasers.every((chaser) => Math.abs(chaser.x - x) + Math.abs(chaser.y - y) > 4);
+          const awayFromBuckets = buckets.every((bucket) => Math.abs(bucket.x - x) + Math.abs(bucket.y - y) > 2);
+          if (!blocked(x, y) && awayFromPlayer && awayFromChasers && awayFromBuckets) cells.push({ x, y });
         }
       }
       return cells[Math.floor(Math.random() * cells.length)] ?? { x: 3, y: 3 };
     }
 
-    function updateBucket(now) {
-      if (bucket.visibleUntil === 0 && now >= bucket.nextAt) {
-        const spot = randomOpenCell();
-        bucket = { ...spot, visibleUntil: now + 10000, nextAt: now + 24000 };
-        messageEl.textContent = "Wassereimer ist da. Hol ihn dir und spritz mit Leertaste.";
+    function resetBuckets(delay = 2500) {
+      buckets = Array.from({ length: bucketLimit() }, (_, index) => ({
+        x: 3 + index,
+        y: 3,
+        visibleUntil: 0,
+        nextAt: Date.now() + delay + index * 1800
+      }));
+    }
+
+    function updateBuckets(now) {
+      while (buckets.length < bucketLimit()) {
+        buckets.push({ x: 3, y: 3, visibleUntil: 0, nextAt: now + 1500 + buckets.length * 1800 });
       }
-      if (bucket.visibleUntil > 0 && now > bucket.visibleUntil) {
-        bucket.visibleUntil = 0;
-        bucket.nextAt = now + 9000;
-      }
+
+      buckets.forEach((bucket) => {
+        if (bucket.visibleUntil === 0 && now >= bucket.nextAt) {
+          const spot = randomOpenCell();
+          bucket.x = spot.x;
+          bucket.y = spot.y;
+          bucket.visibleUntil = now + 10000;
+          bucket.nextAt = now + 22000;
+          messageEl.textContent = `Level ${gameLevel}: Wassereimer ist da. Hol ihn dir und spritz.`;
+        }
+        if (bucket.visibleUntil > 0 && now > bucket.visibleUntil) {
+          bucket.visibleUntil = 0;
+          bucket.nextAt = now + 7000 + Math.random() * 4000;
+        }
+      });
+
       if (bucketPowerUntil > 0 && now > bucketPowerUntil) {
         bucketPowerUntil = 0;
       }
-      if (chaserFrozenUntil > 0 && now > chaserFrozenUntil) {
-        chaserFrozenUntil = 0;
-      }
     }
 
-    function hasClearSprayLine() {
-      if (bucketPowerUntil <= Date.now()) return false;
+    function sprayTarget() {
+      const now = Date.now();
+      if (bucketPowerUntil <= now) return null;
       for (let distance = 1; distance <= 3; distance += 1) {
         const x = player.x + player.dir.x * distance;
         const y = player.y + player.dir.y * distance;
-        if (blocked(x, y)) return false;
-        if (x === chaser.x && y === chaser.y) return true;
+        if (blocked(x, y)) return null;
+        const target = chasers.find((chaser) => chaser.x === x && chaser.y === y && chaser.frozenUntil <= now);
+        if (target) return target;
       }
-      return false;
+      return null;
     }
 
     function sprayWater() {
       if (bucketPowerUntil <= Date.now() || gameOver || win) return;
       sprayFlashUntil = Date.now() + 220;
       sprayDir = { ...player.dir };
-      if (hasClearSprayLine()) {
-        chaserFrozenUntil = Date.now() + 10000;
+      const target = sprayTarget();
+      if (target) {
+        target.frozenUntil = Date.now() + 10000;
         bucketPowerUntil = 0;
-        messageEl.textContent = "Treffer. Er ist 10 Sekunden blockiert.";
+        messageEl.textContent = "Treffer. Eine Alex-Figur ist 10 Sekunden blockiert.";
       } else {
         messageEl.textContent = "Daneben. Du musst in einer geraden 3-Feld-Linie stehen.";
       }
@@ -372,13 +440,20 @@
         scoreEl.textContent = score;
       }
 
-      if (bucket.visibleUntil > Date.now() && player.x === bucket.x && player.y === bucket.y) {
-        bucket.visibleUntil = 0;
-        bucketPowerUntil = Date.now() + 10000;
-        messageEl.textContent = "Eimer geschnappt. Leertaste spritzt 3 Felder weit.";
-      }
+      buckets.forEach((bucket) => {
+        if (bucket.visibleUntil > Date.now() && player.x === bucket.x && player.y === bucket.y) {
+          bucket.visibleUntil = 0;
+          bucket.nextAt = Date.now() + 9000;
+          bucketPowerUntil = Date.now() + 10000;
+          messageEl.textContent = "Eimer geschnappt. Leertaste oder Tropfen-Button spritzt 3 Felder weit.";
+        }
+      });
 
-      if (player.x === chaser.x && player.y === chaser.y && chaserFrozenUntil <= Date.now()) {
+      const activeHit = chasers.some((chaser) => player.x === chaser.x && player.y === chaser.y && chaser.frozenUntil <= Date.now());
+      if (activeHit) {
+        buckets.forEach((bucket) => {
+          bucket.visibleUntil = 0;
+        });
         lives -= 1;
         livesEl.textContent = lives;
         if (lives <= 0) {
@@ -393,7 +468,7 @@
       if (score === totalHearts) {
         win = true;
         startWinCelebration();
-        messageEl.textContent = "Alle Herzen gesammelt. Mission Liebe erfolgreich.";
+        messageEl.textContent = `Level ${gameLevel} geschafft. Druecke R fuer Level ${gameLevel + 1}.`;
       }
     }
 
@@ -475,13 +550,13 @@
       ctx.restore();
     }
 
-    function drawChaser() {
+    function drawChaser(chaser, index) {
       const cx = (chaser.x + 0.5) * tile;
       const cy = (chaser.y + 0.5) * tile;
       ctx.save();
       ctx.translate(cx, cy);
 
-      const frozen = chaserFrozenUntil > Date.now();
+      const frozen = chaser.frozenUntil > Date.now();
       ctx.globalAlpha = frozen ? 0.58 : 1;
 
       ctx.fillStyle = "#d7a277";
@@ -541,32 +616,34 @@
 
       ctx.fillStyle = "#ff5f91";
       ctx.font = `${tile * 0.22}px Arial`;
-      ctx.fillText(frozen ? "X" : "♥", 0, tile * 0.02);
+      ctx.fillText(frozen ? "X" : String(index + 1), 0, tile * 0.02);
       ctx.globalAlpha = 1;
       ctx.restore();
     }
 
     function drawBucket() {
-      if (bucket.visibleUntil <= Date.now()) return;
-      const cx = (bucket.x + 0.5) * tile;
-      const cy = (bucket.y + 0.5) * tile;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.fillStyle = "#69cfff";
-      ctx.beginPath();
-      ctx.roundRect(-tile * 0.22, -tile * 0.05, tile * 0.44, tile * 0.34, tile * 0.06);
-      ctx.fill();
-      ctx.strokeStyle = "#d6f7ff";
-      ctx.lineWidth = tile * 0.04;
-      ctx.beginPath();
-      ctx.arc(0, -tile * 0.06, tile * 0.2, Math.PI, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `${tile * 0.22}px Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("10", 0, tile * 0.13);
-      ctx.restore();
+      buckets.forEach((bucket) => {
+        if (bucket.visibleUntil <= Date.now()) return;
+        const cx = (bucket.x + 0.5) * tile;
+        const cy = (bucket.y + 0.5) * tile;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.fillStyle = "#69cfff";
+        ctx.beginPath();
+        ctx.roundRect(-tile * 0.22, -tile * 0.05, tile * 0.44, tile * 0.34, tile * 0.06);
+        ctx.fill();
+        ctx.strokeStyle = "#d6f7ff";
+        ctx.lineWidth = tile * 0.04;
+        ctx.beginPath();
+        ctx.arc(0, -tile * 0.06, tile * 0.2, Math.PI, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `${tile * 0.22}px Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("10", 0, tile * 0.13);
+        ctx.restore();
+      });
     }
 
     function drawSprayRange() {
@@ -665,16 +742,18 @@
       });
 
       drawPlayer();
-      drawChaser();
+      chasers.forEach((chaser, index) => drawChaser(chaser, index));
       drawWinCelebration();
     }
 
     function step() {
       tick += 1;
       const now = Date.now();
-      updateBucket(now);
+      updateBuckets(now);
       if (!gameOver && !win && now - lastChaserMove > 420) {
-        if (chaserFrozenUntil <= now) chaserMove();
+        chasers.forEach((chaser) => {
+          if (chaser.frozenUntil <= now) chaserMove(chaser);
+        });
         lastChaserMove = now;
         checkCollisions();
       }
@@ -689,6 +768,7 @@
     }
 
     function restart() {
+      if (win) gameLevel += 1;
       hearts.clear();
       for (let y = 0; y < size; y += 1) {
         for (let x = 0; x < size; x += 1) {
@@ -701,13 +781,13 @@
       win = false;
       winStartedAt = 0;
       winHearts = [];
-      bucket = { x: 3, y: 3, visibleUntil: 0, nextAt: Date.now() + 2500 };
+      resetBuckets();
       bucketPowerUntil = 0;
-      chaserFrozenUntil = 0;
       sprayFlashUntil = 0;
       scoreEl.textContent = score;
       livesEl.textContent = lives;
-      messageEl.textContent = "Ein Tastendruck ist ein Feld. Leertaste spritzt mit Eimer.";
+      levelEl.textContent = gameLevel;
+      messageEl.textContent = `Level ${gameLevel}. Ein Tastendruck ist ein Feld.`;
       resetPositions();
     }
 
@@ -737,12 +817,108 @@
       }
     });
 
-    document.querySelector("#up").addEventListener("click", () => setDirection(0, -1));
-    document.querySelector("#down").addEventListener("click", () => setDirection(0, 1));
-    document.querySelector("#left").addEventListener("click", () => setDirection(-1, 0));
-    document.querySelector("#right").addEventListener("click", () => setDirection(1, 0));
-    document.querySelector("#spray").addEventListener("click", () => sprayWater());
+    const joystick = document.querySelector("#joystick");
+    const stick = document.querySelector("#stick");
+    const mobileControls = document.querySelector("#mobileControls");
+    let joystickDir = null;
+    let joystickTimer = null;
+    let lastJoystickMove = 0;
 
+    function moveFromJoystick() {
+      if (!joystickDir) return;
+      const now = Date.now();
+      if (now - lastJoystickMove < 185) return;
+      lastJoystickMove = now;
+      setDirection(joystickDir.x, joystickDir.y);
+    }
+
+    function setStickFromEvent(event) {
+      event.preventDefault();
+      const touch = event.touches?.[0] ?? event.changedTouches?.[0] ?? event;
+      const rect = joystick.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const rawX = touch.clientX - centerX;
+      const rawY = touch.clientY - centerY;
+      const distance = Math.hypot(rawX, rawY);
+      const max = rect.width * 0.28;
+      const limited = distance > 0 ? Math.min(distance, max) / distance : 0;
+      const x = rawX * limited;
+      const y = rawY * limited;
+
+      stick.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+
+      if (Math.abs(rawX) < 10 && Math.abs(rawY) < 10) {
+        joystickDir = null;
+        return;
+      }
+      joystickDir = Math.abs(rawX) > Math.abs(rawY)
+        ? { x: Math.sign(rawX), y: 0 }
+        : { x: 0, y: Math.sign(rawY) };
+      moveFromJoystick();
+    }
+
+    function stopJoystick(event) {
+      event.preventDefault();
+      joystickDir = null;
+      stick.style.transform = "translate(-50%, -50%)";
+      if (joystickTimer) clearInterval(joystickTimer);
+      joystickTimer = null;
+    }
+
+    joystick.addEventListener("touchstart", (event) => {
+      setStickFromEvent(event);
+      if (!joystickTimer) joystickTimer = setInterval(moveFromJoystick, 45);
+    }, { passive: false });
+    joystick.addEventListener("touchmove", setStickFromEvent, { passive: false });
+    joystick.addEventListener("touchend", stopJoystick, { passive: false });
+    joystick.addEventListener("touchcancel", stopJoystick, { passive: false });
+    joystick.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
+      setStickFromEvent(event);
+      if (!joystickTimer) joystickTimer = setInterval(moveFromJoystick, 45);
+    });
+    joystick.addEventListener("pointermove", (event) => {
+      if (!joystickTimer || event.pointerType === "touch") return;
+      setStickFromEvent(event);
+    });
+    joystick.addEventListener("pointerup", stopJoystick);
+    joystick.addEventListener("pointerleave", (event) => {
+      if (joystickTimer) stopJoystick(event);
+    });
+
+    document.querySelector("#spray").addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      sprayWater();
+    }, { passive: false });
+    document.querySelector("#spray").addEventListener("click", (event) => {
+      event.preventDefault();
+      sprayWater();
+    });
+    document.querySelector("#fullscreen").addEventListener("click", async (event) => {
+      event.preventDefault();
+      const target = document.documentElement;
+      if (!document.fullscreenElement && target.requestFullscreen) {
+        await target.requestFullscreen().catch(() => {});
+      } else if (document.exitFullscreen) {
+        await document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    ["touchstart", "touchmove", "touchend", "gesturestart", "gesturechange", "gestureend"].forEach((type) => {
+      mobileControls.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+      canvas.addEventListener(type, (event) => event.preventDefault(), { passive: false });
+    });
+
+    let lastTouchEnd = 0;
+    document.addEventListener("touchend", (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd < 500) event.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+
+    resetPositions();
+    resetBuckets();
     step();
   </script>
 </body>
