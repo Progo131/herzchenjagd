@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Herzchenjagd</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151114;
+      --panel: #22191f;
+      --wall: #6d4df2;
+      --path: #211927;
+      --heart: #ff5f91;
+      --hero: #ffd95c;
+      --chaser: #48d6c5;
+      --text: #fff6fb;
+      --muted: #d9bfc9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(255, 95, 145, 0.22), transparent 28rem),
+        radial-gradient(circle at 80% 78%, rgba(72, 214, 197, 0.16), transparent 24rem),
+        var(--bg);
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+    }
+
+    main {
+      width: min(94vw, 780px);
+      display: grid;
+      gap: 14px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: rgba(34, 25, 31, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(22px, 4vw, 34px);
+      letter-spacing: 0;
+    }
+
+    .stats {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .stats strong {
+      color: var(--text);
+      font-size: 18px;
+    }
+
+    .game-shell {
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      background: rgba(34, 25, 31, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+    }
+
+    canvas {
+      width: min(100%, 720px);
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      background: var(--path);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+      touch-action: none;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 58px);
+      grid-template-rows: repeat(3, 48px);
+      justify-content: center;
+      gap: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: #34283a;
+      color: var(--text);
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    button:active {
+      transform: translateY(1px);
+      background: #44334d;
+    }
+
+    #up {
+      grid-column: 2;
+    }
+
+    #left {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    #down {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    #right {
+      grid-column: 3;
+      grid-row: 2;
+    }
+
+    #spray {
+      grid-column: 2;
+      grid-row: 3;
+      background: #285a75;
+    }
+
+    .message {
+      min-height: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    @media (min-width: 760px) {
+      .controls {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Herzchenjagd</h1>
+      <div class="stats" aria-live="polite">
+        <span>Herzen: <strong id="score">0</strong>/<strong id="total">0</strong></span>
+        <span>Leben: <strong id="lives">3</strong></span>
+      </div>
+    </header>
+
+    <section class="game-shell">
+      <canvas id="game" width="720" height="720" aria-label="Herzchenjagd Spielbrett"></canvas>
+    </section>
+
+    <div class="controls" aria-label="Touch-Steuerung">
+      <button id="up" aria-label="Nach oben">↑</button>
+      <button id="left" aria-label="Nach links">←</button>
+      <button id="down" aria-label="Nach unten">↓</button>
+      <button id="right" aria-label="Nach rechts">→</button>
+      <button id="spray" aria-label="Wasser spritzen">💧</button>
+    </div>
+
+    <p class="message" id="message">Pfeiltasten oder WASD. Sammle alle Herzchen.</p>
+  </main>
+
+  <script>
+    const canvas = document.querySelector("#game");
+    const ctx = canvas.getContext("2d");
+    const scoreEl = document.querySelector("#score");
+    const totalEl = document.querySelector("#total");
+    const livesEl = document.querySelector("#lives");
+    const messageEl = document.querySelector("#message");
+
+    const level = [
+      "#####################",
+      "#P..#.......#.......#",
+      "#.#.#.#####.#.#####.#",
+      "#.#...#...#...#...#.#",
+      "#.#####.#.#####.#.#.#",
+      "#.......#.......#.#.#",
+      "###.###########.#.#.#",
+      "#...#.........#.#...#",
+      "#.###.###.###.#.###.#",
+      "#.....#..C..#.....#.#",
+      "#.###.#.###.#.###.#.#",
+      "#...#.#.....#.#...#.#",
+      "###.#.#######.#.###.#",
+      "#...#.........#.....#",
+      "#.#.###########.###.#",
+      "#.#.............#...#",
+      "#.#####.###.#####.#.#",
+      "#.....#...#.......#.#",
+      "#.###.###.#######.#.#",
+      "#.................#.#",
+      "#####################"
+    ];
+
+    const wallNotes = [
+      { x: 3, y: 0, text: "LY BIBÄ" },
+      { x: 12, y: 0, text: "DU BIST MEIN HERZ" },
+      { x: 0, y: 6, text: "ICH LIEBE DICH" },
+      { x: 12, y: 6, text: "NUR DU" },
+      { x: 1, y: 12, text: "MEIN LIEBLING" },
+      { x: 11, y: 12, text: "BOCK ZU FICKEN" },
+      { x: 4, y: 20, text: "KUSS FUER DICH" },
+      { x: 13, y: 20, text: "LY BIBÄ" }
+    ];
+
+    const size = level.length;
+    const tile = canvas.width / size;
+    const walls = new Set();
+    const hearts = new Set();
+    let totalHearts = 0;
+    let score = 0;
+    let lives = 3;
+    let gameOver = false;
+    let win = false;
+    let tick = 0;
+    let player = { x: 1, y: 1, dir: { x: 1, y: 0 } };
+    let chaser = { x: 10, y: 9, dir: { x: 0, y: -1 } };
+    let lastChaserMove = 0;
+    let bucket = { x: 3, y: 3, visibleUntil: 0, nextAt: 0 };
+    let bucketPowerUntil = 0;
+    let chaserFrozenUntil = 0;
+    let sprayFlashUntil = 0;
+    let sprayDir = { x: 1, y: 0 };
+    let winStartedAt = 0;
+    let winHearts = [];
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const cell = level[y][x];
+        const key = `${x},${y}`;
+        if (cell === "#") walls.add(key);
+        if (cell === ".") {
+          hearts.add(key);
+          totalHearts += 1;
+        }
+      }
+    }
+
+    totalEl.textContent = totalHearts;
+
+    function keyOf(x, y) {
+      return `${x},${y}`;
+    }
+
+    function blocked(x, y) {
+      return walls.has(keyOf(x, y));
+    }
+
+    function canMove(entity, dir) {
+      return !blocked(entity.x + dir.x, entity.y + dir.y);
+    }
+
+    function moveEntity(entity, preferred) {
+      if (canMove(entity, preferred)) {
+        entity.dir = preferred;
+        entity.x += entity.dir.x;
+        entity.y += entity.dir.y;
+      }
+    }
+
+    function chaserMove() {
+      const options = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 }
+      ].filter((dir) => canMove(chaser, dir));
+
+      const queue = [{ x: chaser.x, y: chaser.y, first: null }];
+      const seen = new Set([keyOf(chaser.x, chaser.y)]);
+      let best = null;
+
+      while (queue.length > 0 && !best) {
+        const current = queue.shift();
+        for (const dir of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]) {
+          const nx = current.x + dir.x;
+          const ny = current.y + dir.y;
+          const key = keyOf(nx, ny);
+          if (blocked(nx, ny) || seen.has(key)) continue;
+          const first = current.first ?? dir;
+          if (nx === player.x && ny === player.y) {
+            best = first;
+            break;
+          }
+          seen.add(key);
+          queue.push({ x: nx, y: ny, first });
+        }
+      }
+
+      moveEntity(chaser, best ?? options[0]);
+    }
+
+    function resetPositions() {
+      player = { x: 1, y: 1, dir: { x: 1, y: 0 } };
+      chaser = { x: 10, y: 9, dir: { x: 0, y: -1 } };
+    }
+
+    function randomOpenCell() {
+      const cells = [];
+      for (let y = 1; y < size - 1; y += 1) {
+        for (let x = 1; x < size - 1; x += 1) {
+          const awayFromPlayer = Math.abs(player.x - x) + Math.abs(player.y - y) > 4;
+          const awayFromChaser = Math.abs(chaser.x - x) + Math.abs(chaser.y - y) > 4;
+          if (!blocked(x, y) && awayFromPlayer && awayFromChaser) cells.push({ x, y });
+        }
+      }
+      return cells[Math.floor(Math.random() * cells.length)] ?? { x: 3, y: 3 };
+    }
+
+    function updateBucket(now) {
+      if (bucket.visibleUntil === 0 && now >= bucket.nextAt) {
+        const spot = randomOpenCell();
+        bucket = { ...spot, visibleUntil: now + 10000, nextAt: now + 24000 };
+        messageEl.textContent = "Wassereimer ist da. Hol ihn dir und spritz mit Leertaste.";
+      }
+      if (bucket.visibleUntil > 0 && now > bucket.visibleUntil) {
+        bucket.visibleUntil = 0;
+        bucket.nextAt = now + 9000;
+      }
+      if (bucketPowerUntil > 0 && now > bucketPowerUntil) {
+        bucketPowerUntil = 0;
+      }
+      if (chaserFrozenUntil > 0 && now > chaserFrozenUntil) {
+        chaserFrozenUntil = 0;
+      }
+    }
+
+    function hasClearSprayLine() {
+      if (bucketPowerUntil <= Date.now()) return false;
+      for (let distance = 1; distance <= 3; distance += 1) {
+        const x = player.x + player.dir.x * distance;
+        const y = player.y + player.dir.y * distance;
+        if (blocked(x, y)) return false;
+        if (x === chaser.x && y === chaser.y) return true;
+      }
+      return false;
+    }
+
+    function sprayWater() {
+      if (bucketPowerUntil <= Date.now() || gameOver || win) return;
+      sprayFlashUntil = Date.now() + 220;
+      sprayDir = { ...player.dir };
+      if (hasClearSprayLine()) {
+        chaserFrozenUntil = Date.now() + 10000;
+        bucketPowerUntil = 0;
+        messageEl.textContent = "Treffer. Er ist 10 Sekunden blockiert.";
+      } else {
+        messageEl.textContent = "Daneben. Du musst in einer geraden 3-Feld-Linie stehen.";
+      }
+    }
+
+    function checkCollisions() {
+      const heartKey = keyOf(player.x, player.y);
+      if (hearts.delete(heartKey)) {
+        score += 1;
+        scoreEl.textContent = score;
+      }
+
+      if (bucket.visibleUntil > Date.now() && player.x === bucket.x && player.y === bucket.y) {
+        bucket.visibleUntil = 0;
+        bucketPowerUntil = Date.now() + 10000;
+        messageEl.textContent = "Eimer geschnappt. Leertaste spritzt 3 Felder weit.";
+      }
+
+      if (player.x === chaser.x && player.y === chaser.y && chaserFrozenUntil <= Date.now()) {
+        lives -= 1;
+        livesEl.textContent = lives;
+        if (lives <= 0) {
+          gameOver = true;
+          messageEl.textContent = "Erwischt. Druecke R fuer eine neue Runde.";
+        } else {
+          messageEl.textContent = "Huch. Noch ein Versuch.";
+          resetPositions();
+        }
+      }
+
+      if (score === totalHearts) {
+        win = true;
+        startWinCelebration();
+        messageEl.textContent = "Alle Herzen gesammelt. Mission Liebe erfolgreich.";
+      }
+    }
+
+    function startWinCelebration() {
+      if (winStartedAt > 0) return;
+      winStartedAt = Date.now();
+      winHearts = Array.from({ length: 150 }, () => {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.8 + Math.random() * 3.2;
+        const textWidth = tile * 8.4;
+        const textHeight = tile * 1.1;
+        return {
+          x: canvas.width / 2 + (Math.random() - 0.5) * textWidth,
+          y: canvas.height / 2 + (Math.random() - 0.5) * textHeight,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - Math.random() * 0.8,
+          size: 18 + Math.random() * 26,
+          spin: Math.random() * Math.PI * 2,
+          gravity: 0.018 + Math.random() * 0.025
+        };
+      });
+    }
+
+    function drawHeart(cx, cy, scale) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(scale, scale);
+      ctx.beginPath();
+      ctx.moveTo(0, 7);
+      ctx.bezierCurveTo(-18, -8, -16, -25, 0, -15);
+      ctx.bezierCurveTo(16, -25, 18, -8, 0, 7);
+      ctx.fillStyle = "#ff5f91";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      const cx = (player.x + 0.5) * tile;
+      const cy = (player.y + 0.5) * tile;
+      const open = Math.sin(Date.now() / 95) * 0.16 + 0.24;
+      const angle = Math.atan2(player.dir.y, player.dir.x);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+
+      ctx.fillStyle = "#d7a277";
+      ctx.beginPath();
+      ctx.ellipse(-tile * 0.28, tile * 0.02, tile * 0.22, tile * 0.31, -0.1, 0, Math.PI * 2);
+      ctx.ellipse(-tile * 0.28, tile * 0.25, tile * 0.23, tile * 0.22, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, -tile * 0.06, tile * 0.34, open, Math.PI * 2 - open);
+      ctx.closePath();
+      ctx.fillStyle = "#d7a277";
+      ctx.fill();
+
+      ctx.fillStyle = "#b83421";
+      ctx.beginPath();
+      ctx.ellipse(-tile * 0.32, -tile * 0.05, tile * 0.16, tile * 0.45, -0.35, 0, Math.PI * 2);
+      ctx.ellipse(-tile * 0.18, -tile * 0.24, tile * 0.18, tile * 0.26, -0.1, 0, Math.PI * 2);
+      ctx.arc(tile * 0.02, -tile * 0.31, tile * 0.2, 0, Math.PI * 2);
+      ctx.arc(tile * 0.19, -tile * 0.2, tile * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#5a321d";
+      ctx.beginPath();
+      ctx.arc(-tile * 0.08, -tile * 0.08, tile * 0.035, 0, Math.PI * 2);
+      ctx.arc(tile * 0.08, -tile * 0.08, tile * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#8b4a33";
+      for (const dot of [[-0.16, 0.02], [-0.08, 0.04], [0.08, 0.04], [0.16, 0.02]]) {
+        ctx.beginPath();
+        ctx.arc(tile * dot[0], tile * dot[1], tile * 0.018, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawChaser() {
+      const cx = (chaser.x + 0.5) * tile;
+      const cy = (chaser.y + 0.5) * tile;
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      const frozen = chaserFrozenUntil > Date.now();
+      ctx.globalAlpha = frozen ? 0.58 : 1;
+
+      ctx.fillStyle = "#d7a277";
+      ctx.beginPath();
+      ctx.arc(0, -tile * 0.08, tile * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#101014";
+      ctx.beginPath();
+      ctx.moveTo(-tile * 0.28, -tile * 0.25);
+      ctx.quadraticCurveTo(-tile * 0.08, -tile * 0.54, tile * 0.24, -tile * 0.25);
+      ctx.quadraticCurveTo(tile * 0.08, -tile * 0.34, -tile * 0.28, -tile * 0.25);
+      ctx.fill();
+
+      ctx.fillStyle = "#2bc77f";
+      ctx.beginPath();
+      ctx.arc(-tile * 0.09, -tile * 0.09, tile * 0.045, 0, Math.PI * 2);
+      ctx.arc(tile * 0.09, -tile * 0.09, tile * 0.045, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#48d6c5";
+      ctx.beginPath();
+      ctx.roundRect(-tile * 0.2, tile * 0.14, tile * 0.4, tile * 0.28, tile * 0.08);
+      ctx.fill();
+
+      const angle = Math.atan2(chaser.dir.y, chaser.dir.x);
+      ctx.save();
+      ctx.rotate(angle);
+      ctx.fillStyle = "#8c5cff";
+      ctx.beginPath();
+      ctx.roundRect(tile * 0.08, tile * 0.22, tile * 0.42, tile * 0.1, tile * 0.05);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(tile * 0.5, tile * 0.27);
+      ctx.lineTo(tile * 0.38, tile * 0.17);
+      ctx.lineTo(tile * 0.38, tile * 0.37);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = "#9c6cff";
+      ctx.beginPath();
+      ctx.ellipse(0, tile * 0.46, tile * 0.11, tile * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#7b55d9";
+      ctx.beginPath();
+      ctx.arc(-tile * 0.08, tile * 0.28, tile * 0.07, 0, Math.PI * 2);
+      ctx.arc(tile * 0.08, tile * 0.28, tile * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `${tile * 0.34}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("!", 0, tile * 0.45);
+
+      ctx.fillStyle = "#ff5f91";
+      ctx.font = `${tile * 0.22}px Arial`;
+      ctx.fillText(frozen ? "X" : "♥", 0, tile * 0.02);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    function drawBucket() {
+      if (bucket.visibleUntil <= Date.now()) return;
+      const cx = (bucket.x + 0.5) * tile;
+      const cy = (bucket.y + 0.5) * tile;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = "#69cfff";
+      ctx.beginPath();
+      ctx.roundRect(-tile * 0.22, -tile * 0.05, tile * 0.44, tile * 0.34, tile * 0.06);
+      ctx.fill();
+      ctx.strokeStyle = "#d6f7ff";
+      ctx.lineWidth = tile * 0.04;
+      ctx.beginPath();
+      ctx.arc(0, -tile * 0.06, tile * 0.2, Math.PI, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `${tile * 0.22}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("10", 0, tile * 0.13);
+      ctx.restore();
+    }
+
+    function drawSprayRange() {
+      if (bucketPowerUntil <= Date.now() && sprayFlashUntil <= Date.now()) return;
+      const activeDir = sprayFlashUntil > Date.now() ? sprayDir : player.dir;
+      ctx.save();
+      ctx.strokeStyle = sprayFlashUntil > Date.now() ? "#b9f3ff" : "rgba(105, 207, 255, 0.35)";
+      ctx.lineWidth = tile * 0.18;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo((player.x + 0.5) * tile, (player.y + 0.5) * tile);
+      ctx.lineTo((player.x + 0.5 + activeDir.x * 3) * tile, (player.y + 0.5 + activeDir.y * 3) * tile);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawWinCelebration() {
+      if (!win) return;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 238, 246, 0.72)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      winHearts.forEach((heart) => {
+        heart.x += heart.vx;
+        heart.y += heart.vy;
+        heart.vy += heart.gravity;
+        heart.spin += 0.06;
+
+        if (heart.y > canvas.height + 40) {
+          heart.x = canvas.width / 2 + (Math.random() - 0.5) * tile * 8.4;
+          heart.y = canvas.height / 2 + (Math.random() - 0.5) * tile;
+          heart.vx = (Math.random() - 0.5) * 2.6;
+          heart.vy = -1.2 - Math.random() * 1.8;
+        }
+
+        ctx.save();
+        ctx.translate(heart.x, heart.y);
+        ctx.rotate(Math.sin(heart.spin) * 0.35);
+        drawHeart(0, 0, heart.size / 48);
+        ctx.restore();
+      });
+
+      ctx.fillStyle = "#050505";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `800 ${Math.max(32, tile * 1.25)}px Arial`;
+      ctx.fillText("Alex liebt Romina", canvas.width / 2, canvas.height / 2);
+      ctx.font = `700 ${Math.max(16, tile * 0.52)}px Arial`;
+      ctx.fillText("R druecken fuer noch eine Runde", canvas.width / 2, canvas.height / 2 + tile * 1.25);
+      ctx.restore();
+    }
+
+    function drawWallMessages() {
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 246, 251, 0.92)";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = `700 ${Math.max(8, tile * 0.22)}px Arial`;
+      wallNotes.forEach((note) => {
+        ctx.fillText(note.text, note.x * tile + tile * 0.12, note.y * tile + tile * 0.5);
+      });
+      ctx.restore();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          ctx.fillStyle = blocked(x, y) ? "#6d4df2" : "#211927";
+          ctx.fillRect(x * tile, y * tile, tile, tile);
+        }
+      }
+
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= size; i += 1) {
+        ctx.beginPath();
+        ctx.moveTo(i * tile, 0);
+        ctx.lineTo(i * tile, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * tile);
+        ctx.lineTo(canvas.width, i * tile);
+        ctx.stroke();
+      }
+
+      drawWallMessages();
+      drawBucket();
+      drawSprayRange();
+
+      hearts.forEach((key) => {
+        const [x, y] = key.split(",").map(Number);
+        drawHeart((x + 0.5) * tile, (y + 0.5) * tile, tile / 56);
+      });
+
+      drawPlayer();
+      drawChaser();
+      drawWinCelebration();
+    }
+
+    function step() {
+      tick += 1;
+      const now = Date.now();
+      updateBucket(now);
+      if (!gameOver && !win && now - lastChaserMove > 420) {
+        if (chaserFrozenUntil <= now) chaserMove();
+        lastChaserMove = now;
+        checkCollisions();
+      }
+      draw();
+      requestAnimationFrame(step);
+    }
+
+    function setDirection(x, y) {
+      if (gameOver || win) return;
+      moveEntity(player, { x, y });
+      checkCollisions();
+    }
+
+    function restart() {
+      hearts.clear();
+      for (let y = 0; y < size; y += 1) {
+        for (let x = 0; x < size; x += 1) {
+          if (level[y][x] === ".") hearts.add(keyOf(x, y));
+        }
+      }
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      win = false;
+      winStartedAt = 0;
+      winHearts = [];
+      bucket = { x: 3, y: 3, visibleUntil: 0, nextAt: Date.now() + 2500 };
+      bucketPowerUntil = 0;
+      chaserFrozenUntil = 0;
+      sprayFlashUntil = 0;
+      scoreEl.textContent = score;
+      livesEl.textContent = lives;
+      messageEl.textContent = "Ein Tastendruck ist ein Feld. Leertaste spritzt mit Eimer.";
+      resetPositions();
+    }
+
+    window.addEventListener("keydown", (event) => {
+      const keys = {
+        ArrowUp: [0, -1],
+        w: [0, -1],
+        W: [0, -1],
+        ArrowDown: [0, 1],
+        s: [0, 1],
+        S: [0, 1],
+        ArrowLeft: [-1, 0],
+        a: [-1, 0],
+        A: [-1, 0],
+        ArrowRight: [1, 0],
+        d: [1, 0],
+        D: [1, 0]
+      };
+      if (event.key === "r" || event.key === "R") restart();
+      if (event.code === "Space") {
+        event.preventDefault();
+        sprayWater();
+      }
+      if (keys[event.key]) {
+        event.preventDefault();
+        setDirection(...keys[event.key]);
+      }
+    });
+
+    document.querySelector("#up").addEventListener("click", () => setDirection(0, -1));
+    document.querySelector("#down").addEventListener("click", () => setDirection(0, 1));
+    document.querySelector("#left").addEventListener("click", () => setDirection(-1, 0));
+    document.querySelector("#right").addEventListener("click", () => setDirection(1, 0));
+    document.querySelector("#spray").addEventListener("click", () => sprayWater());
+
+    step();
+  </script>
+</body>
+</html>
